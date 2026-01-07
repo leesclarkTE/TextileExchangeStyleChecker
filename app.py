@@ -11,6 +11,7 @@ uploaded_file = st.file_uploader("Upload a Word document (.docx)", type=["docx"]
 if uploaded_file:
     if st.button("Run style check"):
         with st.spinner("Checking document..."):
+            # Save to a temporary file for python-docx
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
                 tmp.write(uploaded_file.read())
                 temp_path = tmp.name
@@ -34,7 +35,9 @@ if uploaded_file:
         if not results:
             st.success("No issues found 🎉")
 
+        # -------------------------
         # Group results by paragraph
+        # -------------------------
         para_results = defaultdict(list)
         for r in results:
             para_results[r['paragraph_index']].append(r)
@@ -46,25 +49,40 @@ if uploaded_file:
             # Highlight all flagged words in paragraph context
             snippet = context_text
             for r in para_items:
-                snippet = snippet.replace(r['match'], f"**{r['match']}**")
+                # Only highlight individual words, not the full sentence
+                match_text = r['match']
+                # Avoid highlighting "ALL CAPS sentence" placeholder
+                if match_text != "ALL CAPS sentence":
+                    snippet = snippet.replace(match_text, f"**{match_text}**")
 
-            # Truncate if very long
-            MAX_SNIPPET = 100
+            # Truncate snippet for display
+            MAX_SNIPPET = 150
             if len(snippet) > MAX_SNIPPET:
                 snippet = snippet[:MAX_SNIPPET] + "..."
 
             st.markdown(f"**Paragraph {para_idx} context:** {snippet}\n")
 
+            # -------------------------
+            # Display each issue
+            # -------------------------
             for r in para_items:
+                # Determine severity icon
                 icon = {
                     "advice": "🟨",
                     "warning": "🟧",
                     "error": "🟥"
                 }.get(r["severity"], "🟦")
 
+                # Clean markdown for Streamlit
                 reasoning = r['message'].replace("_", "\\_").replace("*", "\\*")
                 suggestion = (r.get('suggested_replacement') or "").replace("_", "\\_").replace("*", "\\*")
                 location = f"Paragraph {r['paragraph_index']}, Character {r['char_index']}"
+
+                # Collapse ALL CAPS sentence warnings to one message per paragraph
+                if r['match'] == "ALL CAPS sentence" and any(
+                    prev['match'] == "ALL CAPS sentence" for prev in para_items if prev is not r
+                ):
+                    continue
 
                 st.markdown(f"""{icon} **{r['match']} ({r['severity'].upper()})**  
 
