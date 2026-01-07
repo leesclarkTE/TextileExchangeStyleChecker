@@ -3,10 +3,14 @@ import json
 import os
 
 # -------------------------
-# CONFIG
+# CONFIG (CLOUD-SAFE)
 # -------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RULES_FILE = os.path.join(BASE_DIR, "Rules", "Textile_Exchange_Style_Guide_STRICT.json")
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+RULES_FILE = os.path.join(
+    REPO_ROOT,
+    "Rules",
+    "Textile_Exchange_Style_Guide_STRICT.json"
+)
 
 # -------------------------
 # HELPER FUNCTIONS
@@ -38,7 +42,8 @@ def display_rules(section_name, rules_data):
             )
         with cols[1]:
             if st.button("Edit", key=f"edit_{section_name}_{idx}"):
-                return "edit", section_name, idx
+                st.session_state.edit_rule = (section_name, idx)
+                st.experimental_rerun()
         with cols[2]:
             if st.button("Delete", key=f"del_{section_name}_{idx}"):
                 return "delete", section_name, idx
@@ -47,40 +52,59 @@ def display_rules(section_name, rules_data):
 # -------------------------
 # MAIN STREAMLIT APP
 # -------------------------
-st.title("Textile Exchange Style Rules Editor")
+st.title("📝 Textile Exchange Style Rules Editor")
 
+# -------------------------
+# DEBUG / STATUS (TEMPORARY BUT IMPORTANT)
+# -------------------------
+st.caption(f"📄 Rules file path: `{RULES_FILE}`")
+
+if not os.path.exists(RULES_FILE):
+    st.error("❌ Rules JSON file NOT found by Streamlit")
+else:
+    st.success("✅ Rules JSON file loaded successfully")
+
+# -------------------------
+# Load rules
+# -------------------------
 rules_data = load_rules()
+terminology_rules = rules_data.get("terminology", [])
+flag_only_rules = rules_data.get("flag_only", [])
 
 # -------------------------
-# Add new rule (moved to top)
+# Add new rule (at top)
 # -------------------------
-st.subheader("Add new rule")
-new_section = st.selectbox("Section", ["terminology","flag_only"])
-new_match = st.text_input("Match word or phrase")
-new_replace = st.text_input("Replacement (optional)")
-new_message = st.text_input("Message / Reasoning")
-new_severity = st.selectbox("Severity", ["advice","warning","error"], index=1)
-if st.button("Add Rule"):
-    if not new_match or not new_message:
-        st.error("Match and Message are required")
-    else:
-        new_rule = {
-            "match": new_match,
-            "replace_with": new_replace if new_replace else None,
-            "message": new_message,
-            "severity": new_severity
-        }
-        rules_data[new_section].append(new_rule)
-        save_rules(rules_data)
-        st.success("New rule added!")
-        st.experimental_rerun()
+st.subheader("➕ Add New Rule")
+
+with st.form("add_rule_form"):
+    section = st.selectbox("Section", ["terminology", "flag_only"])
+    match_text = st.text_input("Match text")
+    replacement = st.text_input("Replacement (optional)")
+    message = st.text_input("Message / Reasoning")
+    severity = st.selectbox("Severity", ["advice", "warning", "error"])
+    submitted = st.form_submit_button("Add Rule")
+
+    if submitted:
+        if not match_text or not message:
+            st.error("Match and Message are required")
+        else:
+            new_rule = {
+                "match": match_text.strip(),
+                "replace_with": replacement.strip() if replacement else None,
+                "message": message.strip(),
+                "severity": severity
+            }
+            rules_data[section].insert(0, new_rule)
+            save_rules(rules_data)
+            st.success(f"✅ New rule added to `{section}`")
+            st.experimental_rerun()
 
 # -------------------------
 # Display existing rules
 # -------------------------
-action, section, idx = display_rules("terminology", rules_data.get("terminology", []))
+action, section, idx = display_rules("terminology", terminology_rules)
 if not action:
-    action, section, idx = display_rules("flag_only", rules_data.get("flag_only", []))
+    action, section, idx = display_rules("flag_only", flag_only_rules)
 
 # -------------------------
 # Handle delete
@@ -89,29 +113,42 @@ if action == "delete":
     if section and idx is not None:
         rules_data[section].pop(idx)
         save_rules(rules_data)
+        st.success("✅ Rule deleted")
         st.experimental_rerun()
 
 # -------------------------
 # Handle edit
 # -------------------------
-if action == "edit":
+if "edit_rule" in st.session_state:
+    section, idx = st.session_state.edit_rule
     rule = rules_data[section][idx]
-    st.subheader(f"Edit rule: {rule.get('match','')}")
-    match = st.text_input("Match", value=rule.get("match",""))
-    replace_with = st.text_input("Replacement", value=rule.get("replace_with",""))
-    message = st.text_input("Message", value=rule.get("message",""))
-    severity = st.selectbox(
-        "Severity",
-        ["advice","warning","error"],
-        index=["advice","warning","error"].index(rule.get("severity","warning"))
-    )
-    if st.button("Save"):
-        rules_data[section][idx] = {
-            "match": match,
-            "replace_with": replace_with if replace_with else None,
-            "message": message,
-            "severity": severity
-        }
-        save_rules(rules_data)
-        st.success("Rule updated!")
-        st.experimental_rerun()
+
+    st.subheader(f"✏️ Edit Rule ({section}, #{idx + 1})")
+
+    with st.form("edit_rule_form"):
+        match_text = st.text_input("Match text", value=rule.get("match", ""))
+        replacement = st.text_input(
+            "Replacement (optional)",
+            value=rule.get("replace_with", "") or ""
+        )
+        message = st.text_input("Message / Reasoning", value=rule.get("message", ""))
+        severity = st.selectbox(
+            "Severity",
+            ["advice", "warning", "error"],
+            index=["advice", "warning", "error"].index(
+                rule.get("severity", "warning")
+            )
+        )
+        submitted = st.form_submit_button("Update Rule")
+
+        if submitted:
+            rules_data[section][idx] = {
+                "match": match_text.strip(),
+                "replace_with": replacement.strip() if replacement else None,
+                "message": message.strip(),
+                "severity": severity
+            }
+            save_rules(rules_data)
+            st.success("✅ Rule updated")
+            del st.session_state.edit_rule
+            st.experimental_rerun()
